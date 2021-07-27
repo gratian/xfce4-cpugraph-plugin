@@ -14,13 +14,16 @@ libcpugraph_la_LIBADD = \
 	$(top_builddir)/xfce4++/util/libxfce4util_pp.la \
 	@LIBXFCE4UI_LIBS@ \
 	@LIBXFCE4PANEL_LIBS@ \
-	-lm
+	-lm \
+	-ludev
 
 libcpugraph_la_SOURCES = \
 	mode.cc \
 	mode.h \
 	cpu.cc \
 	cpu.h \
+	hid.cc \
+	hid.h \
 	os.cc \
 	os.h \
 	plugin.h \

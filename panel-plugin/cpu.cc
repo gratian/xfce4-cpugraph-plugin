@@ -24,14 +24,21 @@
  */
 
 #include "cpu.h"
+#include "hid.h"
 #include "settings.h"
 #include "mode.h"
 #include "plugin.h"
 #include "properties.h"
 
 #include <libxfce4ui/libxfce4ui.h>
+#include <libudev.h>
 #include <math.h>
 #include "xfce4++/util.h"
+
+#define HID_OUT_CH		4
+#define GAUGE_DISPLAY_VID	0x239A
+#define GAUGE_DISPLAY_PID	0x0010
+#define GAUGE_MANUFACTURER	"GeckoHouse"
 
 using xfce4::PluginSize;
 using xfce4::Propagation;
@@ -53,9 +60,13 @@ static PluginSize    size_cb        (XfcePanelPlugin *plugin, guint size, const 
 static TooltipTime   tooltip_cb     (GtkTooltip *tooltip, const Ptr<CPUGraph> &base);
 static void          update_tooltip (const Ptr<CPUGraph> &base);
 
+static struct udev_device *hid_dev = NULL;
+
 void
 cpugraph_construct (XfcePanelPlugin *plugin)
 {
+    hid_dev = find_hidraw_dev(GAUGE_DISPLAY_VID, GAUGE_DISPLAY_PID);
+
     xfce_textdomain (GETTEXT_PACKAGE, PACKAGE_LOCALE_DIR, "UTF-8");
 
     Ptr<CPUGraph> base = create_gui (plugin);
@@ -608,6 +619,12 @@ detect_smt_issues (const Ptr<CPUGraph> &base)
 static xfce4::TimeoutResponse
 update_cb (const Ptr<CPUGraph> &base)
 {
+    uint8_t hid_buf[HID_OUT_CH];
+    uint32_t slice_sz = base->nr_cores / HID_OUT_CH;	/** @todo handle remainder */
+    double slice_sum = 0;
+    uint32_t slice_cnt = 0;
+    uint8_t slice_idx = 0;
+
     if (!read_cpu_data (base->cpu_data))
         return xfce4::TIMEOUT_AGAIN;
 
@@ -625,7 +642,18 @@ update_cb (const Ptr<CPUGraph> &base)
             load.timestamp = timestamp;
             load.value = base->cpu_data[core].load;
             base->history.data[core][base->history.offset] = load;
+
+	    slice_sum += base->cpu_data[core].load;
+	    slice_cnt++;
+	    if (slice_cnt >= slice_sz) {
+		hid_buf[slice_idx] = (slice_sum * 90.0) / slice_cnt;
+		slice_idx++;
+		slice_sum = 0;
+		slice_cnt = 0;
+	    }
         }
+
+	write_hidraw_dev(hid_dev, hid_buf, slice_idx);
     }
 
     queue_draw (base);
